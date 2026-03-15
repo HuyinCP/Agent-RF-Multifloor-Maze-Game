@@ -1,8 +1,7 @@
 # Agent-RF Multifloor Maze Game
+Game nhiều tầng (tức là 1 level có action leo xuống và leo lên) có bẫy, cửa/chìa, quái (patrol, chaser, sniper).
 
-Agent (PPO / A2C) chơi maze nhiều tầng: học theo curriculum 9 level, có bẫy, cửa/chìa, quái (patrol, chaser, sniper). Có app web custom map + chọn model để xem agent chơi.
-
-## Demo — Level Master (L9)
+## Demo ở level khó nhất
 
 Agent **exp2_a2c** (A2C) chơi level Master (13×13, 3 tầng, 4 quái, 3 khóa):
 
