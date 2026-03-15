@@ -3,7 +3,7 @@ Game nhiều tầng (tức là 1 level có action leo xuống và leo lên) có 
 
 ## Demo ở level khó nhất
 
-Agent **exp2_a2c** (A2C) chơi level Master (13×13, 3 tầng, 4 quái, 3 khóa):
+Agent chơi level Master (13×13, 3 tầng, 4 quái, 3 khóa):
 
 | Seed 42 | Seed 142 |
 |--------|---------|
