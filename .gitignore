@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Env / IDE
+.venv/
+venv/
+.env
+.idea/
+.vscode/
+*.swp
+.DS_Store
+__MACOSX/
+
+# Model weights & outputs (nặng — bỏ comment dòng dưới nếu muốn push)
+multi_floor_maze/outputs/
+
+# Jupyter
+.ipynb_checkpoints/
