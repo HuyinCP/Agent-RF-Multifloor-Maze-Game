@@ -1,4 +1,3 @@
-<<<<<<< ours
 # Multi-Floor Maze: Reinforcement Learning trong mê cung nhiều tầng
 
 Agent phải đi từ điểm bắt đầu đến đích trong một mê cung được sinh ngẫu nhiên. Đường đi có thể qua nhiều tầng, cửa cần chìa khóa, bẫy và kẻ địch. Mỗi lượt, agent nhìn thấy vùng lân cận và chọn một hành động; mục tiêu là **đến đích trước khi hết máu hoặc hết số bước**.
