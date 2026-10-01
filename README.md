@@ -4,11 +4,11 @@ Agent xuất phát ở một tầng của mê cung và phải tìm đến ô đ�
 
 ## 1. Định nghĩa bài toán và môi trường
 
-Game được cài đặt bằng [`MazeEnv`](multi_floor_maze/mfm/env.py) theo API Gymnasium. Có thể xem đây là bài toán **quan sát một phần**: trạng thái thật <em>s<sub>t</sub></em> gồm toàn bộ map nhiều tầng, vị trí và tài nguyên của agent, kẻ địch, đạn cùng các ô đã thăm; policy chỉ nhận quan sát <em>o<sub>t</sub></em> ở lượt hiện tại. Actor chọn hành động theo phân phối <em>π<sub>θ</sub>(a | o<sub>t</sub>)</em>, môi trường cập nhật sang <em>s<sub>t+1</sub></em> và trả về reward <em>r<sub>t</sub></em>.
+Game được cài đặt bằng [`MazeEnv`](multi_floor_maze/mfm/env.py) theo API Gymnasium. Có thể xem đây là bài toán **quan sát một phần**: trạng thái thật `s_t` gồm toàn bộ map nhiều tầng, vị trí và tài nguyên của agent, kẻ địch, đạn cùng các ô đã thăm; policy chỉ nhận quan sát `o_t` ở lượt hiện tại. Actor chọn hành động theo phân phối `πθ(a | o_t)`, môi trường cập nhật sang `s_(t+1)` và trả về reward `r_t`.
 
 Mục tiêu tối ưu là kỳ vọng tổng reward có chiết khấu:
 
-<p align="center"><strong>J(θ) = E<sub>πθ</sub>[∑<sub>t=0</sub><sup>T−1</sup> γ<sup>t</sup> r<sub>t</sub>]</strong><br>γ = 0.99</p>
+![Mục tiêu RL: kỳ vọng tổng reward có chiết khấu, gamma bằng 0.99](assets/formulas/objective.png)
 
 Một `reset(seed=...)` tạo map bằng BSP, nối phòng bằng hành lang và đặt các thành phần game. `step(action)` trả về `(observation, reward, terminated, truncated, info)`. `terminated=True` khi agent tới đích hoặc chết; `truncated=True` khi chạm giới hạn bước. Chín cấu hình trong `CURRICULUM` tăng độ khó từ map **7×7, một tầng** đến **13×13, ba tầng**; `config` cho phép thay kích thước, số tầng, bẫy, vật phẩm, địch và khóa.
 
@@ -58,41 +58,43 @@ Reward được cộng theo sự kiện xảy ra trong một lượt. Các giá 
 | Khám phá ô mới / sang tầng mới lần đầu | `+0.05` / `+0.75` |
 | Mỗi bước / va tường hoặc action không hợp lệ | `−0.02` / `−0.12` |
 
-Ngoài ra có reward cho nhặt máu, nhặt đạn và phạt khi bắn. Reward dẫn hướng dùng khoảng cách BFS <em>d<sub>t</sub></em> từ agent tới mục tiêu hiện tại:
+Ngoài ra có reward cho nhặt máu, nhặt đạn và phạt khi bắn. Reward dẫn hướng dùng khoảng cách BFS `d_t` từ agent tới mục tiêu hiện tại:
 
-<p align="center"><strong>r<sub>t</sub><sup>approach</sup> = 0.10 · clip(d<sub>t</sub> − d<sub>t+1</sub>, −1, 1)</strong></p>
+![Reward dẫn hướng theo thay đổi khoảng cách BFS](assets/formulas/approach_reward.png)
 
 Đi gần mục tiêu được cộng điểm; đi xa bị trừ điểm tương ứng. Có thể thay các hệ số qua `config["rewards"]` trong `MazeEnv`.
 
 ## 2. Policy và các thuật toán RL được dùng
 
-Hai thuật toán train chính là **PPO** và **A2C** trong Stable-Baselines3. Cả hai dùng `MultiInputPolicy`: CNN hai lớp xử lý `visual`, MLP xử lý `vector`, rồi ghép đặc trưng thành vector 128 chiều. **Actor** dự đoán phân phối xác suất trên 10 action; **critic** ước lượng <em>V<sub>φ</sub>(o<sub>t</sub>)</em>, tức tổng reward tương lai kỳ vọng từ quan sát hiện tại.
+Hai thuật toán train chính là **PPO** và **A2C** trong Stable-Baselines3. Cả hai dùng `MultiInputPolicy`: CNN hai lớp xử lý `visual`, MLP xử lý `vector`, rồi ghép đặc trưng thành vector 128 chiều. **Actor** dự đoán phân phối xác suất trên 10 action; **critic** ước lượng `Vφ(o_t)`, tức tổng reward tương lai kỳ vọng từ quan sát hiện tại.
 
 Cả hai dùng Generalized Advantage Estimation (GAE) để ước lượng action vừa chọn tốt hơn hay kém hơn kỳ vọng của critic:
 
-<p align="center"><strong>δ<sub>t</sub> = r<sub>t</sub> + γV<sub>φ</sub>(o<sub>t+1</sub>) − V<sub>φ</sub>(o<sub>t</sub>)</strong><br><strong>Â<sub>t</sub> = ∑<sub>l=0</sub><sup>T−t−1</sup> (γλ)<sup>l</sup> δ<sub>t+l</sub></strong>, λ = 0.95</p>
+![GAE: sai số TD và advantage với lambda bằng 0.95](assets/formulas/gae.png)
 
-**PPO** cập nhật actor nhưng giới hạn mức thay đổi policy sau mỗi đợt dữ liệu. Đặt <em>ρ<sub>t</sub>(θ)</em> là tỉ số xác suất chọn cùng action giữa policy mới và policy cũ:
+**PPO** cập nhật actor nhưng giới hạn mức thay đổi policy sau mỗi đợt dữ liệu. Đặt `ρ_t(θ)` là tỉ số xác suất chọn cùng action giữa policy mới và policy cũ:
 
-<p align="center"><strong>ρ<sub>t</sub>(θ) = π<sub>θ</sub>(a<sub>t</sub> | o<sub>t</sub>) / π<sub>θ cũ</sub>(a<sub>t</sub> | o<sub>t</sub>)</strong></p>
+![PPO: tỉ số xác suất giữa policy mới và policy cũ](assets/formulas/ppo_ratio.png)
 
 Mục tiêu clipped surrogate của PPO:
 
-<p align="center"><strong>L<sub>clip</sub><sup>PPO</sup>(θ) = E<sub>t</sub>[min(ρ<sub>t</sub>Â<sub>t</sub>, clip(ρ<sub>t</sub>, 1−ε, 1+ε)Â<sub>t</sub>)]</strong><br>ε = 0.2</p>
+![PPO: mục tiêu clipped surrogate với epsilon bằng 0.2](assets/formulas/ppo_clip.png)
 
 PPO trong [`train.py`](multi_floor_maze/train.py) dùng learning rate `3e-4`, rollout `256` bước mỗi environment, minibatch `128` và `4` epoch cập nhật. Critic học bằng sai số giá trị; entropy được cộng vào mục tiêu để khuyến khích khám phá (`ent_coef=0.01`, `vf_coef=0.5`).
 
 **A2C** dùng cùng actor–critic và advantage, nhưng cập nhật trực tiếp từ rollout ngắn mà không dùng tỉ số clipped của PPO. Phần loss của actor có dạng:
 
-<p align="center"><strong>L<sub>actor</sub><sup>A2C</sup>(θ) = −E<sub>t</sub>[log π<sub>θ</sub>(a<sub>t</sub> | o<sub>t</sub>) · Â<sub>t</sub>]</strong></p>
+![A2C: hàm mất mát của actor](assets/formulas/a2c_actor.png)
 
 [`train_a2c.py`](multi_floor_maze/train_a2c.py) dùng learning rate `7e-4`, rollout `16` bước mỗi environment, γ = `0.99`, λ = `0.95`, `ent_coef=0.01` và `vf_coef=0.5`. Ở cả hai thuật toán, critic được tối ưu cùng actor và gradient được giới hạn chuẩn tối đa `0.5`.
 
 Với cả PPO và A2C, hàm mất mát khi train còn có lỗi dự đoán của critic và entropy của policy:
 
-<p align="center"><strong>L<sub>total</sub> = L<sub>actor</sub> + c<sub>v</sub>E<sub>t</sub>[(V<sub>φ</sub>(o<sub>t</sub>) − Ĝ<sub>t</sub>)<sup>2</sup>] − c<sub>e</sub>E<sub>t</sub>[H(π<sub>θ</sub>(· | o<sub>t</sub>))]</strong><br>c<sub>v</sub> = 0.5, c<sub>e</sub> = 0.01</p>
+![Loss tổng gồm actor, critic và entropy](assets/formulas/total_loss.png)
 
-Ở đây <em>L<sub>actor</sub></em> bằng dấu âm của mục tiêu PPO hoặc bằng loss A2C ở trên; <em>Ĝ<sub>t</sub></em> là mục tiêu giá trị ước lượng từ rollout. Thành phần entropy giúp policy tiếp tục thử các hành động khác nhau.
+Ở đây `L_actor` bằng dấu âm của mục tiêu PPO hoặc bằng loss A2C ở trên; `G_hat_t` là mục tiêu giá trị ước lượng từ rollout. Thành phần entropy giúp policy tiếp tục thử các hành động khác nhau.
+
+Các ảnh công thức nằm trong `assets/formulas/` và được xuất từ LaTeX. Để tạo lại sau khi sửa công thức trong [`render_readme_formulas.py`](multi_floor_maze/render_readme_formulas.py), cần `pdflatex` (MiKTeX hoặc TeX Live), Pillow và PyMuPDF (`pip install pillow pymupdf`), rồi chạy `python render_readme_formulas.py` từ thư mục `multi_floor_maze`.
 
 ## 3. Cài đặt, train và xem kết quả
 
