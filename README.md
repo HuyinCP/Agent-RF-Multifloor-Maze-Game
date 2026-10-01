@@ -1,10 +1,19 @@
-# Multi-Floor Maze — bài toán Reinforcement Learning
+# Multi-Floor Maze — Reinforcement Learning trong mê cung nhiều tầng
 
-Agent cần đi từ điểm bắt đầu đến đích trong mê cung nhiều tầng được sinh ngẫu nhiên. Trên đường có cầu thang, bẫy, cửa cần chìa khóa, vật phẩm và kẻ địch. Agent chỉ quan sát vùng gần mình, nên phải vừa tìm đường vừa quản lý máu, đạn và thể lực. Mục tiêu của mỗi episode là **đến đích trước khi chết hoặc hết số bước**.
+Agent xuất phát ở một tầng của mê cung và phải tìm đến ô đích, có thể ở tầng khác. Mỗi map được sinh ngẫu nhiên với phòng, hành lang, cầu thang, cửa cần chìa khóa, bẫy, vật phẩm và kẻ địch. Agent phải học cách **tìm đường, khám phá và sống sót** trước khi hết số bước của episode.
 
-## Môi trường game
+## 1. Định nghĩa bài toán và môi trường
 
-[`MazeEnv`](multi_floor_maze/mfm/env.py) dùng API Gymnasium. `reset(seed=...)` tạo map và trả về quan sát ban đầu; `step(action)` thực hiện một lượt rồi trả về `(observation, reward, terminated, truncated, info)`. `terminated=True` khi thắng hoặc chết; `truncated=True` khi hết số bước. Map được tạo bằng BSP với các phòng nối bằng hành lang. Cấu hình game nằm trong `CURRICULUM` gồm 9 level, từ map 7×7 một tầng đến map 13×13 ba tầng.
+Game được cài đặt bằng [`MazeEnv`](multi_floor_maze/mfm/env.py) theo API Gymnasium. Có thể xem đây là bài toán **quan sát một phần**: trạng thái thật $s_t$ gồm toàn bộ map nhiều tầng, vị trí và tài nguyên của agent, kẻ địch, đạn cùng các ô đã thăm; policy chỉ nhận quan sát $o_t$ ở lượt hiện tại. Actor chọn $a_t \sim \pi_\theta(a\mid o_t)$, môi trường cập nhật sang $s_{t+1}$ và trả về reward $r_t$.
+
+Mục tiêu tối ưu là kỳ vọng tổng reward có chiết khấu:
+
+$$
+J(\theta)=\mathbb{E}_{\pi_\theta}\!\left[\sum_{t=0}^{T-1}\gamma^t r_t\right],
+\qquad \gamma=0.99.
+$$
+
+Một `reset(seed=...)` tạo map bằng BSP, nối phòng bằng hành lang và đặt các thành phần game. `step(action)` trả về `(observation, reward, terminated, truncated, info)`. `terminated=True` khi agent tới đích hoặc chết; `truncated=True` khi chạm giới hạn bước. Chín cấu hình trong `CURRICULUM` tăng độ khó từ map **7×7, một tầng** đến **13×13, ba tầng**; `config` cho phép thay kích thước, số tầng, bẫy, vật phẩm, địch và khóa.
 
 Ví dụ chạy từ thư mục `multi_floor_maze`:
 
@@ -16,63 +25,136 @@ obs, info = env.reset(seed=42)
 obs, reward, terminated, truncated, info = env.step(3)  # đi sang phải
 ```
 
-### Observation space (đầu vào của actor)
+### Observation space: actor nhìn thấy gì?
 
-Actor nhận `Dict` gồm hai phần. Đây là **quan sát**, không phải toàn bộ trạng thái của map:
+`observation_space` là `Dict` gồm:
 
-| Thành phần | Kích thước mặc định | Ý nghĩa |
+| Thành phần | Shape mặc định | Nội dung |
 |---|---:|---|
-| `visual` | `16 × 9 × 9` | Vùng 9×9 quanh agent. Các kênh đánh dấu tường, bẫy, cửa, cầu thang, đích, vật phẩm, agent, địch, đạn, laser và ô đã thăm. |
-| `vector` | `15` | Máu, đạn, thể lực, chìa khóa, tiếng ồn, tầng hiện tại, hướng tới mục tiêu, hướng đi gần nhất, thời gian còn lại, mức khám phá, cầu thang và độ gần của địch. |
+| `visual` | `(16, 9, 9)` | Cửa sổ 9×9 quanh agent. 16 kênh nhị phân lần lượt biểu diễn tường, bẫy, cửa, cầu thang lên/xuống, đích, chìa khóa, máu, đạn, agent, patrol, chaser, sniper, đạn bay, laser và ô đã thăm. |
+| `vector` | `(15,)` | Máu, đạn, thể lực, trạng thái có chìa, tiếng ồn, tầng hiện tại; hướng `x/y` tới mục tiêu trung gian, hướng tầng cần đi; hướng di chuyển gần nhất `dx/dy`; thời gian còn lại, mật độ ô đã thăm, trạng thái đứng trên cầu thang và độ gần của địch. |
 
-### Action space (đầu ra của actor)
+Các giá trị `vector` nằm trong `[-1, 1]`. Mục tiêu trung gian là chìa khóa khi agent chưa có chìa; nếu không thì là đích. Cửa sổ `visual` phụ thuộc `view_radius` (mặc định 4), nên actor không nhận toàn bộ map trong một lượt.
 
-Actor chọn một số nguyên trong `Discrete(10)`:
+### Action space: actor điều khiển gì?
 
-| Action | Tác dụng |
-|---:|---|
-| `0, 1, 2, 3` | Đi lên, xuống, trái, phải. |
-| `4, 5, 6, 7` | Bắn lên, xuống, trái, phải; tốn 1 đạn. |
-| `8` | Lướt tối đa 2 ô theo hướng gần nhất; tốn thể lực. |
-| `9` | Dùng cầu thang khi đang đứng trên ô cầu thang. |
+`action_space = Discrete(10)`: actor xuất ra **một số nguyên từ 0 đến 9**.
 
-Đi vào cửa sẽ mở cửa nếu agent có chìa khóa. Bắn và lướt tạo tiếng ồn, có thể thu hút địch.
+| ID | Hành động | Điều kiện / tác dụng |
+|---:|---|---|
+| `0` / `1` | Đi lên / xuống | Di chuyển một ô nếu không bị tường chặn. |
+| `2` / `3` | Đi trái / phải | Đi vào cửa sẽ dùng một chìa để mở, nếu có. |
+| `4` / `5` | Bắn lên / xuống | Tốn một viên đạn; tạo tiếng ồn. |
+| `6` / `7` | Bắn trái / phải | Đạn có thể gây sát thương cho địch. |
+| `8` | Lướt | Đi tối đa hai ô theo hướng gần nhất; tốn một điểm thể lực và tạo tiếng ồn. |
+| `9` | Dùng cầu thang | Chỉ chuyển tầng khi đang đứng trên ô cầu thang hợp lệ. |
 
-### Reward và kết thúc episode
+### Reward và điều kiện kết thúc
 
-Reward mặc định: tới đích `+25`, nhặt chìa `+2.5`, mở cửa `+3.5`, khám phá ô mới `+0.05`, tiến gần mục tiêu tối đa `+0.10` mỗi bước. Môi trường phạt mỗi bước `−0.02`, va tường `−0.12`, trúng đòn `−2`, dẫm bẫy `−2.5` và chết `−18`. Ngoài ra còn có reward cho hạ địch, nhặt vật phẩm và sang tầng mới. Các giá trị có thể đổi bằng `config["rewards"]`.
+Reward được cộng theo sự kiện xảy ra trong một lượt. Các giá trị mặc định đáng chú ý:
 
-## Thuật toán và training
+| Sự kiện | Reward |
+|---|---:|
+| Tới đích / chết | `+25` / `−18` |
+| Nhặt chìa / mở cửa | `+2.5` / `+3.5` |
+| Hạ địch / bị đánh / dẫm bẫy | `+1.25` / `−2` / `−2.5` |
+| Khám phá ô mới / sang tầng mới lần đầu | `+0.05` / `+0.75` |
+| Mỗi bước / va tường hoặc action không hợp lệ | `−0.02` / `−0.12` |
 
-Dự án dùng **PPO** và **A2C** của Stable-Baselines3. `MultiInputPolicy` dùng CNN đọc `visual` và MLP đọc `vector`, ghép hai nhóm đặc trưng để actor chọn action và critic ước lượng giá trị. Training chạy 4 game environment bằng `DummyVecEnv`, chuẩn hóa reward với `VecNormalize`, rồi học lần lượt trên 9 level. Sau mỗi level, script đánh giá tỉ lệ thắng; nếu dưới ngưỡng, nó train thêm một đợt trước khi chuyển level.
+Ngoài ra có reward cho nhặt máu, nhặt đạn và phạt khi bắn. Reward dẫn hướng dùng khoảng cách BFS $d_t$ từ agent tới mục tiêu hiện tại:
 
-| Script | Công dụng |
-|---|---|
-| [`train.py`](multi_floor_maze/train.py) | Train PPO trên CPU. |
-| [`train_a2c.py`](multi_floor_maze/train_a2c.py) | Train A2C trên CPU. |
-| [`train_experiments.py`](multi_floor_maze/train_experiments.py) | Chạy 5 cấu hình PPO/A2C để so sánh; mặc định dùng CUDA. |
-| [`evaluate_experiments.py`](multi_floor_maze/evaluate_experiments.py) | Đánh giá model và random baseline trên các map mới; xuất JSON. |
+$$
+r_t^{\text{approach}}=0.10\,\operatorname{clip}(d_t-d_{t+1},-1,1).
+$$
 
-## Cài đặt và chạy
+Đi gần mục tiêu được cộng điểm; đi xa bị trừ điểm tương ứng. Có thể thay các hệ số qua `config["rewards"]` trong `MazeEnv`.
 
-Khuyến nghị Python 3.10+. Từ thư mục gốc của repo:
+## 2. Policy và các thuật toán RL được dùng
+
+Hai thuật toán train chính là **PPO** và **A2C** trong Stable-Baselines3. Cả hai dùng `MultiInputPolicy`: CNN hai lớp xử lý `visual`, MLP xử lý `vector`, rồi ghép đặc trưng thành vector 128 chiều. **Actor** dự đoán phân phối xác suất trên 10 action; **critic** ước lượng $V_\phi(o_t)$, tức tổng reward tương lai kỳ vọng từ quan sát hiện tại.
+
+Cả hai dùng Generalized Advantage Estimation (GAE) để ước lượng action vừa chọn tốt hơn hay kém hơn kỳ vọng của critic:
+
+$$
+\delta_t=r_t+\gamma V_\phi(o_{t+1})-V_\phi(o_t),
+\qquad
+\hat A_t=\sum_{l=0}^{T-t-1}(\gamma\lambda)^l\delta_{t+l},
+\qquad \lambda=0.95.
+$$
+
+**PPO** cập nhật actor nhưng giới hạn mức thay đổi policy sau mỗi đợt dữ liệu. Với $\rho_t(\theta)=\pi_\theta(a_t\mid o_t)/\pi_{\theta_{\rm old}}(a_t\mid o_t)$, mục tiêu clipped surrogate là:
+
+$$
+L^{\rm PPO}_{\rm clip}(\theta)=
+\mathbb E_t\!\left[
+\min\!\left(
+\rho_t(\theta)\hat A_t,
+\operatorname{clip}(\rho_t(\theta),1-\epsilon,1+\epsilon)\hat A_t
+\right)\right],\qquad \epsilon=0.2.
+$$
+
+PPO trong [`train.py`](multi_floor_maze/train.py) dùng learning rate `3e-4`, rollout `256` bước mỗi environment, minibatch `128` và `4` epoch cập nhật. Critic học bằng sai số giá trị; entropy được cộng vào mục tiêu để khuyến khích khám phá (`ent_coef=0.01`, `vf_coef=0.5`).
+
+**A2C** dùng cùng actor–critic và advantage, nhưng cập nhật trực tiếp từ rollout ngắn mà không dùng tỉ số clipped của PPO. Phần loss của actor có dạng:
+
+$$
+L^{\rm A2C}_{\rm actor}(\theta)
+=-\mathbb E_t\left[\log\pi_\theta(a_t\mid o_t)\,\hat A_t\right].
+$$
+
+[`train_a2c.py`](multi_floor_maze/train_a2c.py) dùng learning rate `7e-4`, rollout `16` bước mỗi environment, $\gamma=0.99$, $\lambda=0.95$, `ent_coef=0.01` và `vf_coef=0.5`. Ở cả hai thuật toán, critic được tối ưu cùng actor và gradient được giới hạn chuẩn tối đa `0.5`.
+
+Với cả PPO và A2C, hàm mất mát khi train còn có lỗi dự đoán của critic và entropy của policy:
+
+$$
+L_{\rm total}=L_{\rm actor}
++c_v\,\mathbb E_t\big[(V_\phi(o_t)-\hat G_t)^2\big]
+-c_e\,\mathbb E_t\big[\mathcal H(\pi_\theta(\cdot\mid o_t))\big],
+\qquad c_v=0.5,\;c_e=0.01.
+$$
+
+Ở đây $L_{\rm actor}=-L^{\rm PPO}_{\rm clip}$ với PPO hoặc là loss A2C ở trên; $\hat G_t$ là mục tiêu giá trị ước lượng từ rollout. Thành phần entropy giúp policy tiếp tục thử các hành động khác nhau.
+
+## 3. Cài đặt, train và xem kết quả
+
+Khuyến nghị Python 3.10+. Từ thư mục gốc repo, trên Windows PowerShell:
 
 ```powershell
 cd multi_floor_maze
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1   # Windows PowerShell
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python train.py                 # train PPO; checkpoint lưu trong outputs/
-python evaluate_experiments.py --n-maps 100
 ```
 
-Trên macOS/Linux, dùng `source .venv/bin/activate` thay cho lệnh kích hoạt Windows. Có thể chạy `python train_a2c.py` hoặc `python train_experiments.py --only exp2_a2c` để train biến thể khác. Script experiments đặt `DEVICE="cuda"`; cần GPU/CUDA hoặc đổi sang `cpu` trong script.
+Trên macOS/Linux, dùng `source .venv/bin/activate` để kích hoạt môi trường ảo. Các lệnh dưới đây chạy trong `multi_floor_maze`:
 
-Để xem agent chơi bằng Streamlit, cần có checkpoint đã train và cài thêm Pillow (chưa có trong `requirements.txt`):
+```powershell
+python train.py       # PPO → outputs/ppo_final.zip
+python train_a2c.py   # A2C → outputs/a2c_final.zip
+```
+
+Training dùng 4 môi trường `DummyVecEnv`, chuẩn hóa **reward** bằng `VecNormalize` và học lần lượt qua 9 level trong [`CURRICULUM`](multi_floor_maze/mfm/env.py). Mỗi level có ngân sách 100.000–800.000 bước và ngưỡng tỉ lệ thắng; nếu chưa đạt, script train thêm một đợt rồi chuyển level. Checkpoint nằm trong `multi_floor_maze/outputs/` (được Git bỏ qua).
+
+Để tạo checkpoint dùng cho script đánh giá và giao diện Streamlit, chạy một thí nghiệm rồi đánh giá nó:
+
+```powershell
+python train_experiments.py --only exp2_a2c
+python evaluate_experiments.py --only exp2_a2c --n-maps 100
+```
+
+`train_experiments.py` đặt device là `cuda`; cần PyTorch hỗ trợ CUDA hoặc đổi `DEVICE` thành `"cpu"` trong script.
+
+Giao diện xem agent chơi trên map tùy chỉnh cần checkpoint thí nghiệm đã train và Pillow để tạo GIF:
 
 ```powershell
 pip install pillow
 streamlit run app_custom_map.py
 ```
 
-Model, kết quả đánh giá và GIF được lưu trong `multi_floor_maze/outputs/` (không đưa lên Git). Có thể dùng [`play_custom_map.py`](multi_floor_maze/play_custom_map.py) để chạy map tùy chỉnh từ CLI.
+### Demo level Master
+
+Ba GIF dưới đây là agent A2C (`exp2_a2c`) chơi level 9 trên ba map có seed khác nhau:
+
+| Seed 42 | Seed 142 | Seed 242 |
+|---|---|---|
+| ![A2C level 9 seed 42](assets/demos/exp2_a2c_L9_Master_seed42_WIN.gif) | ![A2C level 9 seed 142](assets/demos/exp2_a2c_L9_Master_seed142_WIN.gif) | ![A2C level 9 seed 242](assets/demos/exp2_a2c_L9_Master_seed242_WIN.gif) |
