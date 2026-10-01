@@ -2,6 +2,22 @@
 
 Agent xuất phát ở một tầng của mê cung và phải tìm đến ô đích, có thể ở tầng khác. Mỗi map được sinh ngẫu nhiên với phòng, hành lang, cầu thang, cửa cần chìa khóa, bẫy, vật phẩm và kẻ địch. Agent phải học cách **tìm đường, khám phá và sống sót** trước khi hết số bước của episode.
 
+## Demo: agent chơi level Master
+
+Agent A2C (`exp2_a2c`) chơi level 9 trên ba map có seed khác nhau:
+
+**Seed 42**
+
+![Agent A2C hoàn thành level Master, seed 42](assets/demos/exp2_a2c_L9_Master_seed42_WIN.gif)
+
+**Seed 142**
+
+![Agent A2C hoàn thành level Master, seed 142](assets/demos/exp2_a2c_L9_Master_seed142_WIN.gif)
+
+**Seed 242**
+
+![Agent A2C hoàn thành level Master, seed 242](assets/demos/exp2_a2c_L9_Master_seed242_WIN.gif)
+
 ## 1. Định nghĩa bài toán và môi trường
 
 Game được cài đặt bằng [`MazeEnv`](multi_floor_maze/mfm/env.py) theo API Gymnasium. Có thể xem đây là bài toán **quan sát một phần**: trạng thái thật `s_t` gồm toàn bộ map nhiều tầng, vị trí và tài nguyên của agent, kẻ địch, đạn cùng các ô đã thăm; policy chỉ nhận quan sát `o_t` ở lượt hiện tại. Actor chọn hành động theo phân phối `πθ(a | o_t)`, môi trường cập nhật sang `s_(t+1)` và trả về reward `r_t`.
@@ -131,11 +147,3 @@ Giao diện xem agent chơi trên map tùy chỉnh cần checkpoint thí nghiệ
 pip install pillow
 streamlit run app_custom_map.py
 ```
-
-### Demo level Master
-
-Ba GIF dưới đây là agent A2C (`exp2_a2c`) chơi level 9 trên ba map có seed khác nhau:
-
-| Seed 42 | Seed 142 | Seed 242 |
-|---|---|---|
-| ![A2C level 9 seed 42](assets/demos/exp2_a2c_L9_Master_seed42_WIN.gif) | ![A2C level 9 seed 142](assets/demos/exp2_a2c_L9_Master_seed142_WIN.gif) | ![A2C level 9 seed 242](assets/demos/exp2_a2c_L9_Master_seed242_WIN.gif) |
