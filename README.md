@@ -1,126 +1,126 @@
-# Multi-Floor Maze — Reinforcement Learning trong mê cung nhiều tầng
+# Multi-Floor Maze: Reinforcement Learning in a Multi-Level Environment
 
-Agent xuất phát ở một tầng của mê cung và phải tìm đến ô đích, có thể ở tầng khác. Mỗi map được sinh ngẫu nhiên với phòng, hành lang, cầu thang, cửa cần chìa khóa, bẫy, vật phẩm và kẻ địch. Agent phải học cách **tìm đường, khám phá và sống sót** trước khi hết số bước của episode.
+The agent starts on one floor of a procedurally generated maze and must reach a goal that may be located on another floor. Each map contains rooms, corridors, stairs, locked doors, keys, traps, items, and enemies. The agent must learn to navigate, explore, and survive before the episode reaches its step limit.
 
-## Demo: agent chơi level Master
+## Demo: Agent Playing the Master Level
 
-Agent A2C (`exp2_a2c`) chơi level 9 trên ba map có seed khác nhau:
+The A2C agent (`exp2_a2c`) plays level 9 on three maps generated from different seeds.
 
 **Seed 42**
 
-![Agent A2C hoàn thành level Master, seed 42](assets/demos/exp2_a2c_L9_Master_seed42_WIN.gif)
+![A2C agent completes the Master level with seed 42](assets/demos/exp2_a2c_L9_Master_seed42_WIN.gif)
 
 **Seed 142**
 
-![Agent A2C hoàn thành level Master, seed 142](assets/demos/exp2_a2c_L9_Master_seed142_WIN.gif)
+![A2C agent completes the Master level with seed 142](assets/demos/exp2_a2c_L9_Master_seed142_WIN.gif)
 
 **Seed 242**
 
-![Agent A2C hoàn thành level Master, seed 242](assets/demos/exp2_a2c_L9_Master_seed242_WIN.gif)
+![A2C agent completes the Master level with seed 242](assets/demos/exp2_a2c_L9_Master_seed242_WIN.gif)
 
-## 1. Định nghĩa bài toán và môi trường
+## 1. Problem and Environment Definition
 
-Game được cài đặt bằng [`MazeEnv`](multi_floor_maze/mfm/env.py) theo API Gymnasium. Có thể xem đây là bài toán **quan sát một phần**: trạng thái thật `s_t` gồm toàn bộ map nhiều tầng, vị trí và tài nguyên của agent, kẻ địch, đạn cùng các ô đã thăm; policy chỉ nhận quan sát `o_t` ở lượt hiện tại. Actor chọn hành động theo phân phối `πθ(a | o_t)`, môi trường cập nhật sang `s_(t+1)` và trả về reward `r_t`.
+The game is implemented as [`MazeEnv`](multi_floor_maze/mfm/env.py) using the Gymnasium API. It can be treated as a partially observable problem. The true state `s_t` contains the complete multi-floor map, the agent's position and resources, enemies, projectiles, and visited cells. The policy receives only the current observation `o_t`. The actor samples an action from `πθ(a | o_t)`, after which the environment transitions to `s_(t+1)` and returns reward `r_t`.
 
-Mục tiêu tối ưu là kỳ vọng tổng reward có chiết khấu:
+The objective is to maximize the expected discounted return:
 
-![Mục tiêu RL: kỳ vọng tổng reward có chiết khấu, gamma bằng 0.99](assets/formulas/objective.png)
+![RL objective: expected discounted return with gamma equal to 0.99](assets/formulas/objective.png)
 
-Một `reset(seed=...)` tạo map bằng BSP, nối phòng bằng hành lang và đặt các thành phần game. `step(action)` trả về `(observation, reward, terminated, truncated, info)`. `terminated=True` khi agent tới đích hoặc chết; `truncated=True` khi chạm giới hạn bước. Chín cấu hình trong `CURRICULUM` tăng độ khó từ map **7×7, một tầng** đến **13×13, ba tầng**; `config` cho phép thay kích thước, số tầng, bẫy, vật phẩm, địch và khóa.
+Calling `reset(seed=...)` generates a map with Binary Space Partitioning, connects rooms with corridors, and places the game entities. Calling `step(action)` returns `(observation, reward, terminated, truncated, info)`. `terminated=True` means the agent reached the goal or died. `truncated=True` means the episode reached its step limit. The nine configurations in `CURRICULUM` increase in difficulty from a **7x7 single-floor map** to a **13x13 three-floor map**. A custom `config` can change the map size, floor count, traps, items, enemies, and locks.
 
-Ví dụ chạy từ thư mục `multi_floor_maze`:
+Example from the `multi_floor_maze` directory:
 
 ```python
 from mfm.env import CURRICULUM, MazeEnv
 
 env = MazeEnv(config=CURRICULUM[1])
 obs, info = env.reset(seed=42)
-obs, reward, terminated, truncated, info = env.step(3)  # đi sang phải
+obs, reward, terminated, truncated, info = env.step(3)  # move right
 ```
 
-### Observation space: actor nhìn thấy gì?
+### Observation Space
 
-`observation_space` là `Dict` gồm:
+The actor receives a Gymnasium `Dict` observation:
 
-| Thành phần | Shape mặc định | Nội dung |
+| Component | Default shape | Description |
 |---|---:|---|
-| `visual` | `(16, 9, 9)` | Cửa sổ 9×9 quanh agent. 16 kênh nhị phân lần lượt biểu diễn tường, bẫy, cửa, cầu thang lên/xuống, đích, chìa khóa, máu, đạn, agent, patrol, chaser, sniper, đạn bay, laser và ô đã thăm. |
-| `vector` | `(15,)` | Máu, đạn, thể lực, trạng thái có chìa, tiếng ồn, tầng hiện tại; hướng `x/y` tới mục tiêu trung gian, hướng tầng cần đi; hướng di chuyển gần nhất `dx/dy`; thời gian còn lại, mật độ ô đã thăm, trạng thái đứng trên cầu thang và độ gần của địch. |
+| `visual` | `(16, 9, 9)` | A 9x9 window centered on the agent. Its 16 binary channels represent walls, traps, doors, upward and downward stairs, the goal, keys, health packs, ammo packs, the agent, patrol enemies, chasers, snipers, projectiles, lasers, and visited cells. |
+| `vector` | `(15,)` | Health, ammo, stamina, key status, noise, current floor, the `x/y` direction to the current subgoal, target-floor direction, last movement direction `dx/dy`, remaining time, local exploration density, stair status, and proximity to the nearest enemy. |
 
-Các giá trị `vector` nằm trong `[-1, 1]`. Mục tiêu trung gian là chìa khóa khi agent chưa có chìa; nếu không thì là đích. Cửa sổ `visual` phụ thuộc `view_radius` (mặc định 4), nên actor không nhận toàn bộ map trong một lượt.
+All `vector` values are normalized to `[-1, 1]`. When the agent does not have a key, the current subgoal is a key; otherwise it is the final goal. The `visual` window depends on `view_radius`, which defaults to 4, so the actor does not receive the full map at each step.
 
-### Action space: actor điều khiển gì?
+### Action Space
 
-`action_space = Discrete(10)`: actor xuất ra **một số nguyên từ 0 đến 9**.
+`action_space = Discrete(10)`, so the actor outputs one integer from 0 to 9.
 
-| ID | Hành động | Điều kiện / tác dụng |
+| ID | Action | Effect |
 |---:|---|---|
-| `0` / `1` | Đi lên / xuống | Di chuyển một ô nếu không bị tường chặn. |
-| `2` / `3` | Đi trái / phải | Đi vào cửa sẽ dùng một chìa để mở, nếu có. |
-| `4` / `5` | Bắn lên / xuống | Tốn một viên đạn; tạo tiếng ồn. |
-| `6` / `7` | Bắn trái / phải | Đạn có thể gây sát thương cho địch. |
-| `8` | Lướt | Đi tối đa hai ô theo hướng gần nhất; tốn một điểm thể lực và tạo tiếng ồn. |
-| `9` | Dùng cầu thang | Chỉ chuyển tầng khi đang đứng trên ô cầu thang hợp lệ. |
+| `0` / `1` | Move up / down | Move one cell unless blocked by a wall. |
+| `2` / `3` | Move left / right | Entering a door consumes one key and opens it when a key is available. |
+| `4` / `5` | Shoot up / down | Consume one round of ammo and generate noise. |
+| `6` / `7` | Shoot left / right | A projectile can damage an enemy. |
+| `8` | Dash | Move up to two cells in the last movement direction, consume one stamina point, and generate noise. |
+| `9` | Use stairs | Change floors only while standing on a valid stair cell. |
 
-### Reward và điều kiện kết thúc
+### Reward and Episode Termination
 
-Reward được cộng theo sự kiện xảy ra trong một lượt. Các giá trị mặc định đáng chú ý:
+Rewards are accumulated from all events that occur during a step. The main default values are:
 
-| Sự kiện | Reward |
+| Event | Reward |
 |---|---:|
-| Tới đích / chết | `+25` / `−18` |
-| Nhặt chìa / mở cửa | `+2.5` / `+3.5` |
-| Hạ địch / bị đánh / dẫm bẫy | `+1.25` / `−2` / `−2.5` |
-| Khám phá ô mới / sang tầng mới lần đầu | `+0.05` / `+0.75` |
-| Mỗi bước / va tường hoặc action không hợp lệ | `−0.02` / `−0.12` |
+| Reach the goal / die | `+25` / `-18` |
+| Collect a key / open a door | `+2.5` / `+3.5` |
+| Defeat an enemy / take damage / trigger a trap | `+1.25` / `-2` / `-2.5` |
+| Explore a new cell / visit a new floor | `+0.05` / `+0.75` |
+| Take a step / hit a wall or use an invalid action | `-0.02` / `-0.12` |
 
-Ngoài ra có reward cho nhặt máu, nhặt đạn và phạt khi bắn. Reward dẫn hướng dùng khoảng cách BFS `d_t` từ agent tới mục tiêu hiện tại:
+The environment also rewards health and ammo pickups and applies a small shooting penalty. The approach reward uses the BFS distance `d_t` from the agent to its current target:
 
-![Reward dẫn hướng theo thay đổi khoảng cách BFS](assets/formulas/approach_reward.png)
+![Approach reward based on the change in BFS distance](assets/formulas/approach_reward.png)
 
-Đi gần mục tiêu được cộng điểm; đi xa bị trừ điểm tương ứng. Có thể thay các hệ số qua `config["rewards"]` trong `MazeEnv`.
+Moving closer to the target adds reward, while moving farther away subtracts reward. All coefficients can be overridden through `config["rewards"]` in `MazeEnv`.
 
-## 2. Policy và các thuật toán RL được dùng
+## 2. Policy and RL Algorithms
 
-Hai thuật toán train chính là **PPO** và **A2C** trong Stable-Baselines3. Cả hai dùng `MultiInputPolicy`: CNN hai lớp xử lý `visual`, MLP xử lý `vector`, rồi ghép đặc trưng thành vector 128 chiều. **Actor** dự đoán phân phối xác suất trên 10 action; **critic** ước lượng `Vφ(o_t)`, tức tổng reward tương lai kỳ vọng từ quan sát hiện tại.
+The two training algorithms are **PPO** and **A2C** from Stable-Baselines3. Both use `MultiInputPolicy`. A two-layer CNN processes `visual`, while an MLP processes `vector`. Their outputs are fused into a 128-dimensional feature vector. The **actor** produces a probability distribution over the 10 actions, and the **critic** estimates `Vφ(o_t)`, the expected future return from the current observation.
 
-### CNN trong bài này là gì?
+### Role of the CNN
 
-CNN là **bộ trích xuất đặc trưng từ vùng bản đồ agent nhìn thấy**, không phải một thuật toán RL riêng. Trong [`SmallDictExtractor`](multi_floor_maze/train.py), tensor `visual` đi qua hai lớp tích chập `3×3` (`16 → 32 → 64` kênh), mỗi lớp theo sau bởi ReLU. `AdaptiveAvgPool2d(1)` gộp kết quả thành vector 64 đặc trưng. Nhờ đó mạng có thể nhận ra các mẫu cục bộ như lối đi, tường, cửa, vật phẩm và địch quanh agent.
+The CNN is a feature extractor for the local map observation, not a separate RL algorithm. In [`SmallDictExtractor`](multi_floor_maze/train.py), the `visual` tensor passes through two `3x3` convolutional layers with ReLU activations. The channel sequence is `16 -> 32 -> 64`. `AdaptiveAvgPool2d(1)` then compresses the result into 64 visual features. This lets the network detect local patterns involving corridors, walls, doors, items, and nearby enemies.
 
-Song song, MLP biến `vector` 15 giá trị thành 64 đặc trưng. Hai đầu ra được ghép và đưa qua lớp fusion để tạo vector 128 chiều cho actor và critic. **PPO/A2C học các trọng số của cả CNN lẫn MLP từ reward của game**, chứ không cần ảnh bản đồ được gán nhãn trước.
+In parallel, an MLP transforms the 15-value `vector` input into 64 state features. The visual and state features are concatenated and passed through a fusion layer to produce 128 features for the actor and critic. PPO and A2C learn the weights of the CNN, MLP, actor, and critic jointly from game rewards. The map images do not require supervised labels.
 
-Cả hai dùng Generalized Advantage Estimation (GAE) để ước lượng action vừa chọn tốt hơn hay kém hơn kỳ vọng của critic:
+Both algorithms use Generalized Advantage Estimation (GAE) to estimate whether an action performed better or worse than the critic expected:
 
-![GAE: sai số TD và advantage với lambda bằng 0.95](assets/formulas/gae.png)
+![GAE TD error and advantage with lambda equal to 0.95](assets/formulas/gae.png)
 
-**PPO** cập nhật actor nhưng giới hạn mức thay đổi policy sau mỗi đợt dữ liệu. Đặt `ρ_t(θ)` là tỉ số xác suất chọn cùng action giữa policy mới và policy cũ:
+**PPO** updates the actor while limiting how much the policy can change after each rollout. The ratio `ρ_t(θ)` compares the probability of the selected action under the new and old policies:
 
-![PPO: tỉ số xác suất giữa policy mới và policy cũ](assets/formulas/ppo_ratio.png)
+![PPO probability ratio between the new and old policies](assets/formulas/ppo_ratio.png)
 
-Mục tiêu clipped surrogate của PPO:
+The PPO clipped surrogate objective is:
 
-![PPO: mục tiêu clipped surrogate với epsilon bằng 0.2](assets/formulas/ppo_clip.png)
+![PPO clipped surrogate objective with epsilon equal to 0.2](assets/formulas/ppo_clip.png)
 
-PPO trong [`train.py`](multi_floor_maze/train.py) dùng learning rate `3e-4`, rollout `256` bước mỗi environment, minibatch `128` và `4` epoch cập nhật. Critic học bằng sai số giá trị; entropy được cộng vào mục tiêu để khuyến khích khám phá (`ent_coef=0.01`, `vf_coef=0.5`).
+PPO in [`train.py`](multi_floor_maze/train.py) uses a learning rate of `3e-4`, a rollout length of `256` steps per environment, minibatches of `128`, and `4` update epochs. The critic learns through the value error, while entropy encourages exploration (`ent_coef=0.01`, `vf_coef=0.5`).
 
-**A2C** dùng cùng actor–critic và advantage, nhưng cập nhật trực tiếp từ rollout ngắn mà không dùng tỉ số clipped của PPO. Phần loss của actor có dạng:
+**A2C** uses the same actor-critic structure and advantage estimate, but updates directly from short rollouts without PPO's clipped probability ratio. Its actor loss is:
 
-![A2C: hàm mất mát của actor](assets/formulas/a2c_actor.png)
+![A2C actor loss](assets/formulas/a2c_actor.png)
 
-[`train_a2c.py`](multi_floor_maze/train_a2c.py) dùng learning rate `7e-4`, rollout `16` bước mỗi environment, γ = `0.99`, λ = `0.95`, `ent_coef=0.01` và `vf_coef=0.5`. Ở cả hai thuật toán, critic được tối ưu cùng actor và gradient được giới hạn chuẩn tối đa `0.5`.
+[`train_a2c.py`](multi_floor_maze/train_a2c.py) uses a learning rate of `7e-4`, a rollout length of `16` steps per environment, `gamma=0.99`, `lambda=0.95`, `ent_coef=0.01`, and `vf_coef=0.5`. In both algorithms, the critic is optimized with the actor and the gradient norm is clipped to `0.5`.
 
-Với cả PPO và A2C, hàm mất mát khi train còn có lỗi dự đoán của critic và entropy của policy:
+The total training loss also includes the critic prediction error and policy entropy:
 
-![Loss tổng gồm actor, critic và entropy](assets/formulas/total_loss.png)
+![Total loss containing the actor, critic, and entropy terms](assets/formulas/total_loss.png)
 
-Ở đây `L_actor` bằng dấu âm của mục tiêu PPO hoặc bằng loss A2C ở trên; `G_hat_t` là mục tiêu giá trị ước lượng từ rollout. Thành phần entropy giúp policy tiếp tục thử các hành động khác nhau.
+Here, `L_actor` is the negative PPO objective or the A2C actor loss shown above. `G_hat_t` is the value target estimated from the rollout. The entropy term encourages the policy to continue exploring different actions.
 
-Các ảnh công thức nằm trong `assets/formulas/` và được xuất từ LaTeX. Để tạo lại sau khi sửa công thức trong [`render_readme_formulas.py`](multi_floor_maze/render_readme_formulas.py), cần `pdflatex` (MiKTeX hoặc TeX Live), Pillow và PyMuPDF (`pip install pillow pymupdf`), rồi chạy `python render_readme_formulas.py` từ thư mục `multi_floor_maze`.
+The formula images are stored in `assets/formulas/` and generated from LaTeX. To regenerate them after editing [`render_readme_formulas.py`](multi_floor_maze/render_readme_formulas.py), install `pdflatex` through MiKTeX or TeX Live, along with Pillow and PyMuPDF (`pip install pillow pymupdf`). Then run `python render_readme_formulas.py` from the `multi_floor_maze` directory.
 
-## 3. Cài đặt, train và xem kết quả
+## 3. Installation and Training
 
-Khuyến nghị Python 3.10+. Từ thư mục gốc repo, trên Windows PowerShell:
+Python 3.10 or later is recommended. From the repository root on Windows PowerShell:
 
 ```powershell
 cd multi_floor_maze
@@ -129,25 +129,25 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Trên macOS/Linux, dùng `source .venv/bin/activate` để kích hoạt môi trường ảo. Các lệnh dưới đây chạy trong `multi_floor_maze`:
+On macOS or Linux, use `source .venv/bin/activate` to activate the virtual environment. Run the following commands from `multi_floor_maze`:
 
 ```powershell
-python train.py       # PPO → outputs/ppo_final.zip
-python train_a2c.py   # A2C → outputs/a2c_final.zip
+python train.py       # PPO, saves outputs/ppo_final.zip
+python train_a2c.py   # A2C, saves outputs/a2c_final.zip
 ```
 
-Training dùng 4 môi trường `DummyVecEnv`, chuẩn hóa **reward** bằng `VecNormalize` và học lần lượt qua 9 level trong [`CURRICULUM`](multi_floor_maze/mfm/env.py). Mỗi level có ngân sách 100.000–800.000 bước và ngưỡng tỉ lệ thắng; nếu chưa đạt, script train thêm một đợt rồi chuyển level. Checkpoint nằm trong `multi_floor_maze/outputs/` (được Git bỏ qua).
+Training uses four `DummyVecEnv` environments, normalizes rewards with `VecNormalize`, and progresses through the nine levels in [`CURRICULUM`](multi_floor_maze/mfm/env.py). Each level has a budget of 100,000 to 800,000 steps and a target win rate. If the target is not reached, the script runs one additional training phase before advancing. Checkpoints are stored in `multi_floor_maze/outputs/`, which is excluded from Git.
 
-Để tạo checkpoint dùng cho script đánh giá và giao diện Streamlit, chạy một thí nghiệm rồi đánh giá nó:
+To produce a checkpoint for the evaluation script and Streamlit interface, train and evaluate an experiment:
 
 ```powershell
 python train_experiments.py --only exp2_a2c
 python evaluate_experiments.py --only exp2_a2c --n-maps 100
 ```
 
-`train_experiments.py` đặt device là `cuda`; cần PyTorch hỗ trợ CUDA hoặc đổi `DEVICE` thành `"cpu"` trong script.
+`train_experiments.py` sets the device to `cuda`. It requires a CUDA-enabled PyTorch installation, or the `DEVICE` value must be changed to `"cpu"` in the script.
 
-Giao diện xem agent chơi trên map tùy chỉnh cần checkpoint thí nghiệm đã train và Pillow để tạo GIF:
+The custom-map interface requires a trained experiment checkpoint and Pillow for GIF generation:
 
 ```powershell
 pip install pillow
