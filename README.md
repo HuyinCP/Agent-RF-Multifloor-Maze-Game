@@ -84,6 +84,12 @@ Ngoài ra có reward cho nhặt máu, nhặt đạn và phạt khi bắn. Reward
 
 Hai thuật toán train chính là **PPO** và **A2C** trong Stable-Baselines3. Cả hai dùng `MultiInputPolicy`: CNN hai lớp xử lý `visual`, MLP xử lý `vector`, rồi ghép đặc trưng thành vector 128 chiều. **Actor** dự đoán phân phối xác suất trên 10 action; **critic** ước lượng `Vφ(o_t)`, tức tổng reward tương lai kỳ vọng từ quan sát hiện tại.
 
+### CNN trong bài này là gì?
+
+CNN là **bộ trích xuất đặc trưng từ vùng bản đồ agent nhìn thấy**, không phải một thuật toán RL riêng. Trong [`SmallDictExtractor`](multi_floor_maze/train.py), tensor `visual` đi qua hai lớp tích chập `3×3` (`16 → 32 → 64` kênh), mỗi lớp theo sau bởi ReLU. `AdaptiveAvgPool2d(1)` gộp kết quả thành vector 64 đặc trưng. Nhờ đó mạng có thể nhận ra các mẫu cục bộ như lối đi, tường, cửa, vật phẩm và địch quanh agent.
+
+Song song, MLP biến `vector` 15 giá trị thành 64 đặc trưng. Hai đầu ra được ghép và đưa qua lớp fusion để tạo vector 128 chiều cho actor và critic. **PPO/A2C học các trọng số của cả CNN lẫn MLP từ reward của game**, chứ không cần ảnh bản đồ được gán nhãn trước.
+
 Cả hai dùng Generalized Advantage Estimation (GAE) để ước lượng action vừa chọn tốt hơn hay kém hơn kỳ vọng của critic:
 
 ![GAE: sai số TD và advantage với lambda bằng 0.95](assets/formulas/gae.png)
