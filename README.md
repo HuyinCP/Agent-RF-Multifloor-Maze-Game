@@ -47,6 +47,21 @@ The actor receives a Gymnasium `Dict` observation:
 | `visual` | `(16, 9, 9)` | A 9x9 window centered on the agent. Its 16 binary channels represent walls, traps, doors, upward and downward stairs, the goal, keys, health packs, ammo packs, the agent, patrol enemies, chasers, snipers, projectiles, lasers, and visited cells. |
 | `vector` | `(15,)` | Health, ammo, stamina, key status, noise, current floor, the `x/y` direction to the current subgoal, target-floor direction, last movement direction `dx/dy`, remaining time, local exploration density, stair status, and proximity to the nearest enemy. |
 
+The 16 channels of `visual` are:
+
+| Channel | Feature | Channel | Feature |
+|---:|---|---:|---|
+| `0` | Wall | `8` | Ammo pack |
+| `1` | Trap | `9` | Agent |
+| `2` | Door | `10` | Patrol enemy |
+| `3` | Stair up | `11` | Chaser enemy |
+| `4` | Stair down | `12` | Sniper enemy |
+| `5` | Goal | `13` | Projectile |
+| `6` | Key | `14` | Laser |
+| `7` | Health pack | `15` | Visited cell |
+
+Each channel is a separate 9x9 binary map. A value of `1` means that the corresponding feature is present at that position, while `0` means it is absent.
+
 All `vector` values are normalized to `[-1, 1]`. When the agent does not have a key, the current subgoal is a key; otherwise it is the final goal. The `visual` window depends on `view_radius`, which defaults to 4, so the actor does not receive the full map at each step.
 
 ### Action Space
